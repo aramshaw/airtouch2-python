@@ -76,39 +76,65 @@ class At2PlusClient:
             _LOGGER.warning("Reading message failed")
             return
 
-        if message.header.type == MessageType.CONTROL_STATUS:
-            subheader = ControlStatusSubHeader.from_buffer(message.data_buffer)
-            if subheader.sub_type == ControlStatusSubType.AC_STATUS:
-                status_message = AcStatusMessage.from_bytes(
-                    message.data_buffer.read_bytes(subheader.subdata_length.total()))
-                self._task_creator(self._handle_status_message(status_message))
-            elif subheader.sub_type == ControlStatusSubType.GROUP_STATUS:
-                group_status_message = GroupStatusMessage.from_bytes(
-                    message.data_buffer.read_bytes(subheader.subdata_length.total()))
-                self._task_creator(self._handle_group_status_message(group_status_message))
+        try:
+            if message.header.type == MessageType.CONTROL_STATUS:
+                try:
+                    subheader = ControlStatusSubHeader.from_buffer(message.data_buffer)
+                    if subheader.sub_type == ControlStatusSubType.AC_STATUS:
+                        status_message = AcStatusMessage.from_bytes(
+                            message.data_buffer.read_bytes(subheader.subdata_length.total()))
+                        self._task_creator(self._handle_status_message(status_message))
+                    elif subheader.sub_type == ControlStatusSubType.GROUP_STATUS:
+                        group_status_message = GroupStatusMessage.from_bytes(
+                            message.data_buffer.read_bytes(subheader.subdata_length.total()))
+                        self._task_creator(self._handle_group_status_message(group_status_message))
+                    else:
+                        # Handle unknown control status subtypes gracefully
+                        _LOGGER.debug(f"Unknown control status subtype: 0x{subheader.sub_type:02x}")
+                        _LOGGER.debug(f"Data: {message.data_buffer.to_bytes().hex(':')}")
+
+                except ValueError as e:
+                    # This catches enum parsing errors for unknown subtypes
+                    _LOGGER.debug(f"Unknown control status message type: {e}")
+                    _LOGGER.debug(f"Raw data: {message.data_buffer.to_bytes().hex(':')}")
+                    
+                    # Try to extract the subtype and send an ACK
+                    raw_data = message.data_buffer.to_bytes()
+                    if len(raw_data) > 0:
+                        unknown_subtype = raw_data[0]
+                        _LOGGER.debug(f"Sending ACK for unknown subtype: 0x{unknown_subtype:02x}")
+                        await self._send_ack_response(unknown_subtype)
+
+            elif message.header.type == MessageType.EXTENDED:
+                subheader = ExtendedSubHeader.from_buffer(message.data_buffer)
+                if subheader.sub_type == ExtendedMessageSubType.ABILITY:
+                    ability_message_bytes = message.data_buffer.read_remaining()
+                    _LOGGER.debug(f"Creating ability message from {len(ability_message_bytes)} bytes")
+                    ability = AcAbilityMessage.from_bytes(ability_message_bytes)
+                    await self._ability_message_queue.put(ability)
+                elif subheader.sub_type == ExtendedMessageSubType.GROUP_NAME:
+                    group_names_subdata = message.data_buffer.read_remaining()
+                    for id, name in group_names_from_subdata(group_names_subdata).items():
+                        self.groups_by_id[id]._update_name(name)
+                elif subheader.sub_type == ExtendedMessageSubType.ERROR:
+                    # NYI
+                    pass
+                else:
+                    _LOGGER.debug(f"Unknown extended message subtype: 0x{subheader.sub_type:02x}")
+                    _LOGGER.debug(f"Data: {message.data_buffer.to_bytes().hex(':')}")
             else:
-                _LOGGER.warning(
-                    f"Unknown status message type: subtype={subheader.sub_type}, data={message.data_buffer.to_bytes().hex(':')}")
-        elif message.header.type == MessageType.EXTENDED:
-            subheader = ExtendedSubHeader.from_buffer(message.data_buffer)
-            if subheader.sub_type == ExtendedMessageSubType.ABILITY:
-                ability_message_bytes = message.data_buffer.read_remaining()
-                _LOGGER.debug(f"Creating ability message from {len(ability_message_bytes)} bytes")
-                ability = AcAbilityMessage.from_bytes(ability_message_bytes)
-                await self._ability_message_queue.put(ability)
-            elif subheader.sub_type == ExtendedMessageSubType.GROUP_NAME:
-                group_names_subdata = message.data_buffer.read_remaining()
-                for id, name in group_names_from_subdata(group_names_subdata).items():
-                    self.groups_by_id[id]._update_name(name)
-            elif subheader.sub_type == ExtendedMessageSubType.ERROR:
-                # NYI
-                pass
-            else:
-                _LOGGER.warning(
-                    f"Unknown extended message type: subtype={subheader.sub_type}, data={message.data_buffer.to_bytes().hex(':')}")
-        else:
-            _LOGGER.warning(
-                f"Unknown message type, header={message.header.to_bytes().hex(':')}, data={message.data_buffer.to_bytes().hex(':')}")
+                # Handle completely unknown message types
+                _LOGGER.debug(f"Unknown message type: 0x{message.header.type:02x}")
+                _LOGGER.debug(f"Header: {message.header.to_bytes().hex(':')}")
+                _LOGGER.debug(f"Data: {message.data_buffer.to_bytes().hex(':')}")
+       
+
+        except Exception as e:
+            _LOGGER.error(f"Error processing message: {e}", exc_info=True)
+            _LOGGER.debug(f"Message header: {message.header.to_bytes().hex(':')}")
+            _LOGGER.debug(f"Message data: {message.data_buffer.to_bytes().hex(':')}")
+
+        
 
     async def _read_magic(self) -> bytes:
         """Search for the two header magic bytes"""
@@ -224,3 +250,75 @@ class At2PlusClient:
         if request_names:
             _LOGGER.debug("Requesting all group names")
             await self._client.send(RequestGroupNamesMessage())
+
+    async def _send_ack_response(self, msg_type: int, message_type: bool = False):
+        """Send a proper acknowledgment response based on protocol documentation."""
+        try:
+            if msg_type == 0x2B:  # Extended Status - Timer/System related
+                # Based on doc offsets 0x15A-0x161 (timer status)
+                ack_data = bytes([
+                    0x2B, 0x00,           # Subtype + reserved
+                    0x00, 0x04,           # Normal data length (4 bytes)
+                    0x00, 0x00,           # Repeat data length (0)
+                    0x00, 0x00,           # Repeat count (0)
+                    0x00, 0x00, 0x00, 0x00  # Basic timer ACK data
+                ])
+                
+            elif msg_type == 0x10:  # AC Status Extended
+                # Based on doc offsets 0x162-0x163 (AC status)
+                ack_data = bytes([
+                    0x10, 0x00,           # Subtype + reserved  
+                    0x00, 0x02,           # Normal data length (2 bytes)
+                    0x00, 0x00,           # Repeat data length (0)
+                    0x00, 0x00,           # Repeat count (0)
+                    0x00, 0x00            # Basic AC status ACK
+                ])
+                
+            elif msg_type == 0x31:  # Favorite Status
+                # Acknowledge favorite status
+                ack_data = bytes([
+                    0x31, 0x00,           # Subtype + reserved
+                    0x00, 0x01,           # Normal data length (1 byte)
+                    0x00, 0x00,           # Repeat data length (0)  
+                    0x00, 0x00,           # Repeat count (0)
+                    0x00                  # Simple favorite ACK
+                ])
+                
+            elif msg_type == 0x40:  # Zone Status
+                # Based on doc zone percentages (0x114-0x123)
+                ack_data = bytes([
+                    0x40, 0x00,           # Subtype + reserved
+                    0x00, 0x01,           # Normal data length (1 byte)
+                    0x00, 0x00,           # Repeat data length (0)
+                    0x00, 0x00,           # Repeat count (0)
+                    0x00                  # Simple zone ACK
+                ])
+                
+            else:
+                # Generic acknowledgment for other unknown types
+                ack_data = bytes([
+                    msg_type, 0x00,       # Subtype + reserved
+                    0x00, 0x00,           # Normal data length (0)
+                    0x00, 0x00,           # Repeat data length (0)
+                    0x00, 0x00            # Repeat count (0)
+                ])
+
+            # Create proper header for control status message
+            from airtouch2.protocol.at2plus.message_common import AddressMsgType
+            header = Header(
+                address_msg_type=AddressMsgType.NORMAL,
+                type=MessageType.CONTROL_STATUS, 
+                data_length=len(ack_data)
+            )
+
+            # Create and send the message
+            buffer = Buffer(len(ack_data))
+            buffer.append_bytes(ack_data)
+
+            message = Message(header, buffer)
+            await self._client.send(message)
+
+            _LOGGER.debug(f"Sent protocol-compliant ACK for subtype 0x{msg_type:02x}")
+
+        except Exception as e:
+            _LOGGER.error(f"Failed to send ACK for 0x{msg_type:02x}: {e}", exc_info=True)
