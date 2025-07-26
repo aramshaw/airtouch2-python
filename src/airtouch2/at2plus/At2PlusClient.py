@@ -306,10 +306,10 @@ class At2PlusClient:
             # Create proper header for control status message
             from airtouch2.protocol.at2plus.message_common import AddressMsgType
             header = Header(
-                address_msg_type=AddressMsgType.NORMAL,
-                type=MessageType.CONTROL_STATUS, 
-                data_length=len(ack_data)
-            )
+                AddressMsgType.NORMAL,      # positional argument
+                MessageType.CONTROL_STATUS, # positional argument
+                len(ack_data)              # positional argument
+)
 
             # Create and send the message
             buffer = Buffer(len(ack_data))
