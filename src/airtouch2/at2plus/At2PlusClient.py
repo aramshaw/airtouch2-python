@@ -88,6 +88,10 @@ class At2PlusClient:
                         group_status_message = GroupStatusMessage.from_bytes(
                             message.data_buffer.read_bytes(subheader.subdata_length.total()))
                         self._task_creator(self._handle_group_status_message(group_status_message))
+                    elif subheader.sub_type == ControlStatusSubType.UNKNOWN_45:  # Add this block
+                        _LOGGER.debug(f"Unknown status type 0x45: {message.data_buffer.to_bytes().hex(':')}")
+                        # Send ACK
+                        await self._send_ack_response(0x45)
                     else:
                         # Handle unknown control status subtypes gracefully
                         _LOGGER.debug(f"Unknown control status subtype: 0x{subheader.sub_type:02x}")
@@ -292,6 +296,16 @@ class At2PlusClient:
                     0x00, 0x00,           # Repeat data length (0)
                     0x00, 0x00,           # Repeat count (0)
                     0x00                  # Simple zone ACK
+                ])
+
+            elif msg_type == 0x45:  # Unknown status type
+                # Basic acknowledgment for unknown type 0x45
+                ack_data = bytes([
+                    0x45, 0x00,           # Subtype + reserved
+                    0x00, 0x01,           # Normal data length (1 byte)
+                    0x00, 0x00,           # Repeat data length (0)
+                    0x00, 0x00,           # Repeat count (0)
+                    0x00                  # Simple ACK
                 ])
                 
             else:
