@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime
+from email import message
 import logging
 
 from airtouch2.at2plus.At2PlusAircon import At2PlusAircon
@@ -102,6 +103,12 @@ class At2PlusClient:
             _LOGGER.warning("Reading message failed")
             return
 
+        _LOGGER.debug(
+            f"=== MESSAGE RECEIVED: Type=0x{message.header.type:02x}, Length={message.header.data_length} ==="
+        )
+        _LOGGER.debug(f"Header: {message.header.to_bytes().hex(':')}")
+        _LOGGER.debug(f"Data: {message.data_buffer.to_bytes().hex(':')}")
+
         try:
             if message.header.type == MessageType.CONTROL_STATUS:
                 try:
@@ -130,6 +137,11 @@ class At2PlusClient:
                         )
                         # Send ACK
                         await self._send_ack_response(0x45)
+                    elif subheader.sub_type == ControlStatusSubType.EXTENDED_STATUS:
+                        _LOGGER.debug(
+                            "NEW CODE: Handling Extended Status message (0x2b)"
+                        )
+                        await self._send_ack_response(subheader.sub_type)
                     else:
                         # Handle unknown control status subtypes gracefully
                         _LOGGER.debug(
