@@ -1,6 +1,7 @@
 import asyncio
 from datetime import datetime
-from email import message
+import time
+import hashlib
 import logging
 
 from airtouch2.at2plus.At2PlusAircon import At2PlusAircon
@@ -60,6 +61,10 @@ class At2PlusClient:
         self._ability_message_queue: asyncio.Queue[AcAbilityMessage] = asyncio.Queue()
         self._found_ac = asyncio.Event()
         self._new_group_callbacks: list[Callback] = []
+
+        # ACK dedupe / rate-limit cache
+        self._last_ack_sent = {}
+        self._ack_min_interval = 0.3
 
         self.add_new_ac_callback(lambda: self._found_ac.set())
 
@@ -137,11 +142,13 @@ class At2PlusClient:
                         )
                         # Send ACK
                         await self._send_ack_response(0x45)
+
                     elif subheader.sub_type == ControlStatusSubType.EXTENDED_STATUS:
                         _LOGGER.debug(
                             "NEW CODE: Handling Extended Status message (0x2b)"
                         )
                         await self._send_ack_response(subheader.sub_type)
+
                     else:
                         # Handle unknown control status subtypes gracefully
                         _LOGGER.debug(
@@ -165,7 +172,8 @@ class At2PlusClient:
                         _LOGGER.debug(
                             f"Sending ACK for unknown subtype: 0x{unknown_subtype:02x}"
                         )
-                        await self._send_ack_response(unknown_subtype)
+                        incoming = raw_data[:8] if len(raw_data) >= 8 else None
+                        await self._send_ack_response(unknown_subtype, False, incoming)
 
             elif message.header.type == MessageType.EXTENDED:
                 subheader = ExtendedSubHeader.from_buffer(message.data_buffer)
@@ -325,25 +333,27 @@ class At2PlusClient:
             _LOGGER.debug("Requesting all group names")
             await self._client.send(RequestGroupNamesMessage())
 
-    async def _send_ack_response(self, msg_type: int, message_type: bool = False):
+    async def _send_ack_response(
+        self, msg_type: int, message_type: bool = False, incoming_subheader=None
+    ):
         """Send a proper acknowledgment response based on protocol documentation."""
         try:
+            ack_data: bytes
+
             if msg_type == 0x2B:  # Extended Status - Timer/System related
-                # Based on doc offsets 0x15A-0x161 (timer status)
+                # This is the working ACK format discovered through testing.
+                # It follows the same pattern as other simple status ACKs (0x31, 0x40).
                 ack_data = bytes(
                     [
                         0x2B,
                         0x00,  # Subtype + reserved
                         0x00,
-                        0x04,  # Normal data length (4 bytes)
+                        0x01,  # Normal data length (1 byte)
                         0x00,
                         0x00,  # Repeat data length (0)
                         0x00,
                         0x00,  # Repeat count (0)
-                        0x00,
-                        0x00,
-                        0x00,
-                        0x00,  # Basic timer ACK data
+                        0x00,  # 1-byte zero payload
                     ]
                 )
 
@@ -427,21 +437,61 @@ class At2PlusClient:
                     ]
                 )
 
+            # Dedupe / rate-limit: suppress sending identical ACKs too frequently
+            try:
+                ack_hash = hashlib.sha256(ack_data).hexdigest()
+            except Exception:
+                # Fallback to raw bytes repr if hashing fails for some reason
+                ack_hash = str(ack_data)
+
+            now = time.monotonic()
+            last_sent = self._last_ack_sent.get(ack_hash)
+            # Allow faster repeat ACKs for 0x2B as controller resends at ~270ms; either bypass or use short interval
+            effective_interval = 0.05 if msg_type == 0x2B else self._ack_min_interval
+            if (
+                last_sent is not None
+                and (now - last_sent) < effective_interval
+                and msg_type
+                != 0x2B  # never suppress for 0x2B within main interval, only after shorter interval
+            ):
+                _LOGGER.debug(
+                    f"Suppressing duplicate ACK for subtype 0x{msg_type:02x} (sent {now - last_sent:.03f}s ago)"
+                )
+                return
+
+            # record send time and log the ACK payload
+            self._last_ack_sent[ack_hash] = now
+            _LOGGER.debug(
+                f"ACK payload for subtype 0x{msg_type:02x}: {ack_data.hex(':')}"
+            )
+
             # Create proper header for control status message
             from airtouch2.protocol.at2plus.message_common import AddressMsgType
 
-            header = Header(
-                AddressMsgType.NORMAL,  # positional argument
-                MessageType.CONTROL_STATUS,  # positional argument
-                len(ack_data),  # positional argument
-            )
+            header: Header
+            if msg_type == 0x2B:
+                # The 0x2B ACK requires a special header address (0xc0) to be accepted.
+                # This was discovered by comparing the working tester and failing client.
+                header = Header(
+                    0xC0,  # Special address for 0x2B ACK
+                    MessageType.CONTROL_STATUS,
+                    len(ack_data),
+                )
+            else:
+                # Other ACKs use the standard client address (0x80).
+                header = Header(
+                    AddressMsgType.NORMAL,
+                    MessageType.CONTROL_STATUS,
+                    len(ack_data),
+                )
 
             # Create and send the message
             buffer = Buffer(len(ack_data))
             buffer.append_bytes(ack_data)
 
             message = Message(header, buffer)
-            await self._client.send(message.to_bytes())
+            _LOGGER.debug(f"CLIENT ACK SENT -> RAW: {message.to_bytes().hex(':')}")
+            await self._client.send(message)
 
             _LOGGER.debug(f"Sent protocol-compliant ACK for subtype 0x{msg_type:02x}")
 
