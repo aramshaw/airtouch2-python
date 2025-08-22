@@ -134,19 +134,17 @@ class At2PlusClient:
                         self._task_creator(
                             self._handle_group_status_message(group_status_message)
                         )
-                    elif (
-                        subheader.sub_type == ControlStatusSubType.UNKNOWN_45
-                    ):  # Add this block
-                        _LOGGER.debug(
-                            f"Unknown status type 0x45: {message.data_buffer.to_bytes().hex(':')}"
-                        )
-                        # Send ACK
+
+                    elif subheader.sub_type == ControlStatusSubType.FAVORITE_STATUS:
+                        _LOGGER.debug(f"Handling 0x31: {message.data_buffer.to_bytes().hex(':')}")
+                        # Status broadcast, no ACK needed.
+
+                    elif subheader.sub_type == ControlStatusSubType.UNKNOWN_45:
+                        _LOGGER.debug(f"Handling 0x45: {message.data_buffer.to_bytes().hex(':')}")
                         await self._send_ack_response(0x45)
 
                     elif subheader.sub_type == ControlStatusSubType.EXTENDED_STATUS:
-                        _LOGGER.debug(
-                            "NEW CODE: Handling Extended Status message (0x2b)"
-                        )
+                        _LOGGER.debug(f"Handling 0x2b: {message.data_buffer.to_bytes().hex(':')}")
                         await self._send_ack_response(subheader.sub_type)
 
                     else:
@@ -376,39 +374,7 @@ class At2PlusClient:
             #         ]
             #     )
 
-            # elif msg_type == 0x31:  # Favorite Status
-            #     # Acknowledge favorite status
-            #     ack_data = bytes(
-            #         [
-            #             0x31,
-            #             0x00,  # Subtype + reserved
-            #             0x00,
-            #             0x01,  # Normal data length (1 byte)
-            #             0x00,
-            #             0x00,  # Repeat data length (0)
-            #             0x00,
-            #             0x00,  # Repeat count (0)
-            #             0x00,  # Simple favorite ACK
-            #         ]
-            #     )
-
-            # elif msg_type == 0x40:  # Zone Status
-            #     # Based on doc zone percentages (0x114-0x123)
-            #     ack_data = bytes(
-            #         [
-            #             0x40,
-            #             0x00,  # Subtype + reserved
-            #             0x00,
-            #             0x01,  # Normal data length (1 byte)
-            #             0x00,
-            #             0x00,  # Repeat data length (0)
-            #             0x00,
-            #             0x00,  # Repeat count (0)
-            #             0x00,  # Simple zone ACK
-            #         ]
-            #     )
-
-            elif msg_type == 0x45:  # Unknown status type
+            elif msg_type == 0x45:  
                 # Basic acknowledgment for unknown type 0x45
                 ack_data = bytes(
                     [
@@ -467,7 +433,7 @@ class At2PlusClient:
             from airtouch2.protocol.at2plus.message_common import AddressMsgType
 
             header: Header
-            # TESTING: 0x45 ACK causes a burst of re-sends from the controller so this header is also likley to be wrong. 
+            # TESTING: 0x45 ACK causes a burst of re-sends from the controller so this header is also likley to be wrong.
             # Guessing that it's the same as the 0x2B header and testing that
             if msg_type == 0x2B or msg_type == 0x45:
                 # The 0x2B and 0x45 ACKs require a special header address (0xc0) to be accepted.
