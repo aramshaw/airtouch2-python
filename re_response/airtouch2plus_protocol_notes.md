@@ -70,53 +70,94 @@ A simple 1-byte payload is required.
 ```
 **Note**: This acknowledgment requires a special header address of `0xC0` instead of the standard `0x80`.
 
+#### 0x21 - Group Status
+
+**Purpose**: Provides the current status of all zone groups, including power state and damper percentage. This message is sent frequently and immediately after a favorite scene is changed to reflect the new settings.
+
+**Structure**:
+```
+Byte 0: 0x21 (Message subtype)
+Byte 1: 0x00 (Reserved)
+Bytes 2-7: Standard control status subheader (typically 00 00 00 08 00 08, indicating 0 bytes of normal data, and 8 repeats of 8-byte blocks)
+Bytes 8+: Repeating 8-byte group status blocks
+```
+
+**Group Status Block Format (8 bytes per group)**:
+```
+Byte 0:    Power and ID. Bit 6 (0x40) is power state (1=ON). Lower 4 bits are the group ID.
+Byte 1:    Target Damper Percentage (0-100).
+Byte 2:    Unknown flags.
+Byte 3:    Current Damper Percentage (0-100).
+Bytes 4-7: Additional flags (spill, turbo, etc).
+```
+
+**Example Parsing from Live Log**:
+```
+Data: 21:00:00:00:00:08:00:08:40:64:96:64:02:f8:00:00:41:50:96:50:02:f8:00:00...
+      │ │                    │ │
+      │ │                    └─ 8 repeats of 8-byte blocks
+      │ └─ Subtype (0x21)
+      │
+      └─ Group 0 Block (40:64:96:64...):
+         - Power/ID: 0x40 -> Power ON, ID 0
+         - Target Damper: 0x64 -> 100%
+         - Current Damper: 0x64 -> 100%
+      └─ Group 1 Block (41:50:96:50...):
+         - Power/ID: 0x41 -> Power ON, ID 1
+         - Target Damper: 0x50 -> 80%
+         - Current Damper: 0x50 -> 80%
+```
+
+**Required Acknowledgment**:
+This is a status message and does not require an acknowledgment.
+
+
 #### 0x31 - Favorite Status
 
-**Purpose**: Provides names and active status of configured favorite scenes.
+**Purpose**: Provides the names of all configured favorite scenes and indicates which one is currently active. This message is sent when the active favorite changes.
 
 **Structure**:
 ```
 Byte 0: 0x31 (Message subtype)
 Byte 1: 0x00 (Reserved)
-Bytes 2-7: Standard control status subheader (typically 00 02 00 0B 00 04)
-Byte 8: Active selector (bitmap indicating which favorite is active)
-Bytes 9+: Favorite entries
+Bytes 2-7: Standard control status subheader (typically 00 02 00 0B 00 04, indicating 2 bytes of normal data, and 4 repeats of 11-byte blocks)
+Bytes 8-9: Normal Data - Active favorite selector
+Bytes 10+: Repeating 11-byte favorite entry blocks
 ```
 
-**Active Selector Bitmap**:
-- Bit 0 (0x01): Favorite 0 active
-- Bit 1 (0x02): Favorite 1 active  
-- Bit 2 (0x04): Favorite 2 active
-- Bit 3 (0x08): Favorite 3 active
+**Active Selector (Normal Data)**:
+The first byte of the normal data is a bitmap indicating which favorite is active. The second byte is currently unknown (observed as `0x08`).
+- `0x01`: Favorite 0 active 
+- `0x02`: Favorite 1 active 
+- `0x04`: Favorite 2 active 
+- `0x08`: Favorite 3 active 
 
-**Favorite Entry Format**:
-
-*Favorite 0 (special case - no ID byte)*:
+**Favorite Entry Format (11 bytes per favorite)**:
 ```
-Status Byte | Separator | Name Bytes | Null Padding
-```
-
-*Favorites 1-3*:
-```
-Status Byte | Separator | Favorite ID | Name Bytes | Null Padding
+Byte 0:    Favorite ID (0-indexed)
+Bytes 1-8: Name (8-byte ASCII string, null-padded)
+Bytes 9-10: Unknown/Status bytes
 ```
 
-**Example Parsing**:
+**Example Parsing from Live Log**:
+Message received when "gym" (Favorite ID 1) was activated.
 ```
-31:00:00:02:00:0b:00:04:01:08:00:6d:61:69:6e:00:00:00:00:1b:00:01:67:79:6d:00:00:00:00:00:00
-│                            │  │  │  └─────────┘                │  │  │  └───────────┘
-│                            │  │  │    "main"                   │  │  │    "gym"  
-│                            │  │  │                             │  │  │
-│                            │  │  └─ separator                  │  │  └─ favorite ID (1)
-│                            │  └─ status byte                   │  └─ separator
-│                            └─ active selector (0x01 = fav 0)   └─ status byte
-└─ message header
+Data: 31:00:00:02:00:0b:00:04:02:08:00:6d:61:69:6e:00:00:00:00:1b:00:01:67:79:6d:00:00:00:00:00:9b:00...
+      │ │                    │ │   │ │
+      │ │                    │ │   │ └─ Repeat Count (4 favorites)
+      │ │                    │ │   └─ Repeat Length (11 bytes)
+      │ │                    │ └─ Normal Data Length (2 bytes)
+      │ │                    └─ Active Selector (0x02 -> Favorite 1 is active)
+      │ └─ Subtype (0x31)
+      │
+      └─ Favorite 1 Block:
+         - ID: 0x01
+         - Name: 0x67796d... (in this case "gym")
+         - Unknown: 0x9b00
 ```
 
 **Required Acknowledgment**:
-```
-31 00 00 01 00 00 00 00 00
-```
+This is a status message and does not require an acknowledgment.
 
 #### 0x40 - Zone Status
 
