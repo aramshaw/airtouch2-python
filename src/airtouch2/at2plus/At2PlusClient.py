@@ -136,15 +136,21 @@ class At2PlusClient:
                         )
 
                     elif subheader.sub_type == ControlStatusSubType.FAVORITE_STATUS:
-                        _LOGGER.debug(f"Handling 0x31: {message.data_buffer.to_bytes().hex(':')}")
+                        _LOGGER.debug(
+                            f"Handling Favorite Status message (0x{subheader.sub_type.value:02x})"
+                        )
                         # Status broadcast, no ACK needed.
 
                     elif subheader.sub_type == ControlStatusSubType.UNKNOWN_45:
-                        _LOGGER.debug(f"Handling 0x45: {message.data_buffer.to_bytes().hex(':')}")
-                        await self._send_ack_response(0x45)
+                        _LOGGER.debug(
+                            f"Handling 'Polyaire' broadcast message (0x{subheader.sub_type.value:02x})"
+                        )
+                        await self._send_ack_response(subheader.sub_type)
 
                     elif subheader.sub_type == ControlStatusSubType.EXTENDED_STATUS:
-                        _LOGGER.debug(f"Handling 0x2b: {message.data_buffer.to_bytes().hex(':')}")
+                        _LOGGER.debug(
+                            f"Handling Extended Status message (0x{subheader.sub_type.value:02x})"
+                        )
                         await self._send_ack_response(subheader.sub_type)
 
                     else:
