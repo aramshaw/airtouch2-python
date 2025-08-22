@@ -336,7 +336,7 @@ class At2PlusClient:
     async def _send_ack_response(
         self, msg_type: int, message_type: bool = False, incoming_subheader=None
     ):
-        """Send a proper acknowledgment response based on protocol documentation."""
+        """Send acknowledgment response."""
         try:
             ack_data: bytes
 
@@ -357,54 +357,56 @@ class At2PlusClient:
                     ]
                 )
 
-            elif msg_type == 0x10:  # AC Status Extended
-                # Based on doc offsets 0x162-0x163 (AC status)
-                ack_data = bytes(
-                    [
-                        0x10,
-                        0x00,  # Subtype + reserved
-                        0x00,
-                        0x02,  # Normal data length (2 bytes)
-                        0x00,
-                        0x00,  # Repeat data length (0)
-                        0x00,
-                        0x00,  # Repeat count (0)
-                        0x00,
-                        0x00,  # Basic AC status ACK
-                    ]
-                )
+            # ACKs for these probably not needed but keeping in case.
+            #
+            # elif msg_type == 0x10:  # AC Status Extended
+            #     # Based on doc offsets 0x162-0x163 (AC status)
+            #     ack_data = bytes(
+            #         [
+            #             0x10,
+            #             0x00,  # Subtype + reserved
+            #             0x00,
+            #             0x02,  # Normal data length (2 bytes)
+            #             0x00,
+            #             0x00,  # Repeat data length (0)
+            #             0x00,
+            #             0x00,  # Repeat count (0)
+            #             0x00,
+            #             0x00,  # Basic AC status ACK
+            #         ]
+            #     )
 
-            elif msg_type == 0x31:  # Favorite Status
-                # Acknowledge favorite status
-                ack_data = bytes(
-                    [
-                        0x31,
-                        0x00,  # Subtype + reserved
-                        0x00,
-                        0x01,  # Normal data length (1 byte)
-                        0x00,
-                        0x00,  # Repeat data length (0)
-                        0x00,
-                        0x00,  # Repeat count (0)
-                        0x00,  # Simple favorite ACK
-                    ]
-                )
+            # elif msg_type == 0x31:  # Favorite Status
+            #     # Acknowledge favorite status
+            #     ack_data = bytes(
+            #         [
+            #             0x31,
+            #             0x00,  # Subtype + reserved
+            #             0x00,
+            #             0x01,  # Normal data length (1 byte)
+            #             0x00,
+            #             0x00,  # Repeat data length (0)
+            #             0x00,
+            #             0x00,  # Repeat count (0)
+            #             0x00,  # Simple favorite ACK
+            #         ]
+            #     )
 
-            elif msg_type == 0x40:  # Zone Status
-                # Based on doc zone percentages (0x114-0x123)
-                ack_data = bytes(
-                    [
-                        0x40,
-                        0x00,  # Subtype + reserved
-                        0x00,
-                        0x01,  # Normal data length (1 byte)
-                        0x00,
-                        0x00,  # Repeat data length (0)
-                        0x00,
-                        0x00,  # Repeat count (0)
-                        0x00,  # Simple zone ACK
-                    ]
-                )
+            # elif msg_type == 0x40:  # Zone Status
+            #     # Based on doc zone percentages (0x114-0x123)
+            #     ack_data = bytes(
+            #         [
+            #             0x40,
+            #             0x00,  # Subtype + reserved
+            #             0x00,
+            #             0x01,  # Normal data length (1 byte)
+            #             0x00,
+            #             0x00,  # Repeat data length (0)
+            #             0x00,
+            #             0x00,  # Repeat count (0)
+            #             0x00,  # Simple zone ACK
+            #         ]
+            #     )
 
             elif msg_type == 0x45:  # Unknown status type
                 # Basic acknowledgment for unknown type 0x45
@@ -437,7 +439,7 @@ class At2PlusClient:
                     ]
                 )
 
-            # Dedupe / rate-limit: suppress sending identical ACKs too frequently
+            # Rate-limit: suppress sending identical ACKs too frequently
             try:
                 ack_hash = hashlib.sha256(ack_data).hexdigest()
             except Exception:
@@ -446,13 +448,9 @@ class At2PlusClient:
 
             now = time.monotonic()
             last_sent = self._last_ack_sent.get(ack_hash)
-            # Allow faster repeat ACKs for 0x2B as controller resends at ~270ms; either bypass or use short interval
-            effective_interval = 0.05 if msg_type == 0x2B else self._ack_min_interval
             if (
                 last_sent is not None
-                and (now - last_sent) < effective_interval
-                and msg_type
-                != 0x2B  # never suppress for 0x2B within main interval, only after shorter interval
+                and (now - last_sent) < self._ack_min_interval    
             ):
                 _LOGGER.debug(
                     f"Suppressing duplicate ACK for subtype 0x{msg_type:02x} (sent {now - last_sent:.03f}s ago)"
@@ -469,9 +467,9 @@ class At2PlusClient:
             from airtouch2.protocol.at2plus.message_common import AddressMsgType
 
             header: Header
+            # TODO: 0x45 ACK causes a burst of re-sends from the controller so this header is also likley to be wrong.
             if msg_type == 0x2B:
                 # The 0x2B ACK requires a special header address (0xc0) to be accepted.
-                # This was discovered by comparing the working tester and failing client.
                 header = Header(
                     0xC0,  # Special address for 0x2B ACK
                     MessageType.CONTROL_STATUS,
@@ -490,10 +488,10 @@ class At2PlusClient:
             buffer.append_bytes(ack_data)
 
             message = Message(header, buffer)
-            _LOGGER.debug(f"CLIENT ACK SENT -> RAW: {message.to_bytes().hex(':')}")
             await self._client.send(message)
 
-            _LOGGER.debug(f"Sent protocol-compliant ACK for subtype 0x{msg_type:02x}")
+            _LOGGER.debug(f"Sent ACK for subtype 0x{msg_type:02x}")
+            _LOGGER.debug(f"RAW: {message.to_bytes().hex(':')}")
 
         except Exception as e:
             _LOGGER.error(
