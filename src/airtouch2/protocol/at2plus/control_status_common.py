@@ -39,7 +39,7 @@ class ControlStatusSubType(IntEnum):
     FAVORITE_STATUS = 0x31         # Favorite names and active status  
     EXTENDED_STATUS = 0x2B         # Extended system status
     ZONE_STATUS = 0x40             # Zone control status
-    UNKNOWN_45 = 0x45              # Add this new one
+    UNKNOWN_45 = 0x45  # Seems to simply broadcast "Polyaire Atch2PM" which could stand for "AirTouch 2 Plus Module".
 
 
 @dataclass

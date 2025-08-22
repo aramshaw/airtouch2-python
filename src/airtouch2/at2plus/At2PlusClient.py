@@ -467,11 +467,12 @@ class At2PlusClient:
             from airtouch2.protocol.at2plus.message_common import AddressMsgType
 
             header: Header
-            # TODO: 0x45 ACK causes a burst of re-sends from the controller so this header is also likley to be wrong.
-            if msg_type == 0x2B:
-                # The 0x2B ACK requires a special header address (0xc0) to be accepted.
+            # TESTING: 0x45 ACK causes a burst of re-sends from the controller so this header is also likley to be wrong. 
+            # Guessing that it's the same as the 0x2B header and testing that
+            if msg_type == 0x2B or msg_type == 0x45:
+                # The 0x2B and 0x45 ACKs require a special header address (0xc0) to be accepted.
                 header = Header(
-                    0xC0,  # Special address for 0x2B ACK
+                    0xC0,  # Special address for these ACKs
                     MessageType.CONTROL_STATUS,
                     len(ack_data),
                 )

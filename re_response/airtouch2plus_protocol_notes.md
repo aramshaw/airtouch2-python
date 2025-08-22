@@ -64,9 +64,11 @@ Bytes 10+: Repeating 4-byte sections:
 **Correlation**: Relates to timer offsets 0x15A-0x161 in AirTouch2 documentation
 
 **Required Acknowledgment**:
+A simple 1-byte payload is required.
 ```
-2B 00 00 04 00 00 00 00 00 00 00 00
+2B 00 00 01 00 00 00 00 00
 ```
+**Note**: This acknowledgment requires a special header address of `0xC0` instead of the standard `0x80`.
 
 #### 0x31 - Favorite Status
 
@@ -137,6 +139,16 @@ Bytes 8+: Repeating 8-byte zone blocks:
 ```
 40 00 00 01 00 00 00 00 00
 ```
+#### 0x45 - System Identity Broadcast
+
+**Purpose**: Broadcasts system identity information. The payload contains the string "Polyaire Atch2PM", likely identifying the manufacturer and "AirTouch 2 Plus Module". This message appears to be sent periodically (e.g., every 13 hours).
+
+**Required Acknowledgment - still testing**:
+A simple 1-byte payload is required.
+```
+45 00 00 01 00 00 00 00 00
+```
+**Note**: This acknowledgment requires a special header address of `0xC0` instead of the standard `0x80`.
 
 ### Unknown Message Types
 
@@ -168,8 +180,9 @@ Data (variable length):
 
 ### Message Header Requirements
 
-- **Address Message Type**: `AddressMsgType.NORMAL` (0x80)
-- **Message Type**: `MessageType.CONTROL_STATUS` (0xC0)
+- **Address Message Type**: `AddressMsgType.NORMAL` (`0x80`) for most messages.
+  - **Exception**: Acknowledgments for message subtypes `0x2B` and `0x45` must use the address `0xC0`. 
+- **Message Type**: `MessageType.CONTROL_STATUS` (`0xC0`)
 - **CRC16**: Proper MODBUS CRC16 checksum required
 
 ### Critical Implementation Notes
@@ -200,20 +213,23 @@ class MessageType(IntEnum):
 ```python
 async def _send_ack_response(self, msg_type: int):
     """Send protocol-compliant acknowledgment."""
+    ack_data: bytes
     if msg_type == 0x2B:  # Extended Status
-        ack_data = bytes([0x2B, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
-    elif msg_type == 0x10:  # AC Status Extended  
-        ack_data = bytes([0x10, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
-    elif msg_type == 0x31:  # Favorite Status
-        ack_data = bytes([0x31, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00])
-    elif msg_type == 0x40:  # Zone Status
-        ack_data = bytes([0x40, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00])
+        ack_data = bytes([0x2B, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00])
+    elif msg_type == 0x45:  # System Identity
+        ack_data = bytes([0x45, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00])
     else:
+        # Generic ACK for other subtypes if needed
         ack_data = bytes([msg_type, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+
+    # Create header with correct address
+    if msg_type == 0x2B or msg_type == 0x45:
+        header = Header(0xC0, MessageType.CONTROL_STATUS, len(ack_data))
+    else:
+        header = Header(0x80, MessageType.CONTROL_STATUS, len(ack_data))
     
     # Create and send message with proper headers and checksum
-    # ... implementation details ...
-```
+    # ... implementation details ...```
 
 ## Future Enhancement Opportunities
 
