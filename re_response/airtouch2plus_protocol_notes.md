@@ -68,7 +68,7 @@ A simple 1-byte payload is required.
 ```
 2B 00 00 01 00 00 00 00 00
 ```
-**Note**: This acknowledgment requires a special header address of `0xC0` instead of the standard `0x80`.
+**Note**: The acknowledgment for this message must be sent as a `CONTROL_STATUS` message (type `0xC0`).
 
 #### 0x21 - Group Status
 
@@ -189,7 +189,7 @@ A simple 1-byte payload is required.
 ```
 45 00 00 01 00 00 00 00 00
 ```
-**Note**: This acknowledgment requires a special header address of `0xC0` instead of the standard `0x80`.
+**Note**: The acknowledgment for this message must be sent as a `CONTROL_STATUS` message (type `0xC0`).
 
 ### Unknown Message Types
 
@@ -221,9 +221,8 @@ Data (variable length):
 
 ### Message Header Requirements
 
-- **Address Message Type**: `AddressMsgType.NORMAL` (`0x80`) for most messages.
-  - **Exception**: Acknowledgments for message subtypes `0x2B` and `0x45` must use the address `0xC0`. 
-- **Message Type**: `MessageType.CONTROL_STATUS` (`0xC0`)
+- **Address Source**: Your client should always identify itself with address `0x80`.
+- **Message Type**: Use `MessageType.CONTROL_STATUS` (`0xC0`) for sending control commands and for acknowledging messages like `0x2B` and `0x45`. Use other types like `MessageType.EXTENDED` (`0xCB`) for other specific requests.
 - **CRC16**: Proper MODBUS CRC16 checksum required
 
 ### Critical Implementation Notes
