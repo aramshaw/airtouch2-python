@@ -36,6 +36,10 @@ from airtouch2.protocol.at2plus.messages.GroupNames import (
     group_names_from_subdata,
 )
 from airtouch2.protocol.at2plus.messages.GroupStatus import GroupStatusMessage
+from airtouch2.protocol.at2plus.messages.FavouriteStatus import (
+    Favourite,
+    FavouriteStatusMessage,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -50,6 +54,8 @@ class At2PlusClient:
         # public
         self.aircons_by_id: dict[int, At2PlusAircon] = {}
         self.groups_by_id: dict[int, At2PlusGroup] = {}
+        self.favourites: list[Favourite] = []
+        self.active_favourite_id: int | None = None
 
         # private
         self._client = NetClient(
@@ -61,6 +67,7 @@ class At2PlusClient:
         self._ability_message_queue: asyncio.Queue[AcAbilityMessage] = asyncio.Queue()
         self._found_ac = asyncio.Event()
         self._new_group_callbacks: list[Callback] = []
+        self._favourite_callbacks: list[Callback] = []
 
         # ACK dedupe / rate-limit cache
         self._last_ack_sent = {}
@@ -95,6 +102,15 @@ class At2PlusClient:
         def remove_callback() -> None:
             if callback in self._new_group_callbacks:
                 self._new_group_callbacks.remove(callback)
+
+        return remove_callback
+
+    def add_favourite_callback(self, callback: Callback):
+        self._favourite_callbacks.append(callback)
+
+        def remove_callback() -> None:
+            if callback in self._favourite_callbacks:
+                self._favourite_callbacks.remove(callback)
 
         return remove_callback
 
@@ -136,10 +152,21 @@ class At2PlusClient:
                         )
 
                     elif subheader.sub_type == ControlStatusSubType.FAVORITE_STATUS:
+                        # Status broadcast, no ACK needed.
                         _LOGGER.debug(
                             f"Handling Favorite Status message (0x{subheader.sub_type.value:02x})"
                         )
-                        # Status broadcast, no ACK needed.
+                        subdata = message.data_buffer.read_bytes(
+                            subheader.subdata_length.total()
+                        )
+                        fav_status = FavouriteStatusMessage.from_data(
+                            subheader, subdata
+                        )
+                        self.favourites = fav_status.favourites
+                        self.active_favourite_id = fav_status.active_favourite_id
+                        # Notify listeners that the favourites list has changed
+                        for callback in self._favourite_callbacks:
+                            callback()
 
                     elif subheader.sub_type == ControlStatusSubType.UNKNOWN_45:
                         _LOGGER.debug(
@@ -381,7 +408,7 @@ class At2PlusClient:
             #     )
 
             elif msg_type == 0x45:  
-                # Basic acknowledgment for unknown type 0x45
+                # Basic acknowledgment for 0x45 - System Identity Broadcast
                 ack_data = bytes(
                     [
                         0x45,
@@ -439,12 +466,10 @@ class At2PlusClient:
             from airtouch2.protocol.at2plus.message_common import AddressMsgType
 
             header: Header
-            # TESTING: 0x45 ACK causes a burst of re-sends from the controller so this header is also likley to be wrong.
-            # Guessing that it's the same as the 0x2B header and testing that
             if msg_type == 0x2B or msg_type == 0x45:
-                # The 0x2B and 0x45 ACKs require a special header address (0xc0) to be accepted.
+                # The 0x2B and 0x45 ACKs require a `CONTROL_STATUS` message (type `0xC0`) header address to be accepted.
                 header = Header(
-                    0xC0,  # Special address for these ACKs
+                    0xC0,
                     MessageType.CONTROL_STATUS,
                     len(ack_data),
                 )
