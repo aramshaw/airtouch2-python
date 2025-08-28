@@ -48,8 +48,7 @@ class MessageType(IntEnum):
     UNSET = 0
     CONTROL_STATUS = 0xC0
     EXTENDED = 0x1F
-    UNKNOWN_27 = 0x27  # Unknown message type 39 decimal
-
+    POWER_STATUS = 0x27  
 
 class Header(Serializable):
     address_msg_type: AddressMsgType

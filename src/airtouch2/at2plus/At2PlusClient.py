@@ -182,17 +182,17 @@ class At2PlusClient:
 
                     else:
                         # Handle unknown control status subtypes gracefully
-                        _LOGGER.debug(
+                        _LOGGER.warning(
                             f"Unknown control status subtype: 0x{subheader.sub_type:02x}"
                         )
-                        _LOGGER.debug(
+                        _LOGGER.warning(
                             f"Data: {message.data_buffer.to_bytes().hex(':')}"
                         )
 
                 except ValueError as e:
                     # This catches enum parsing errors for unknown subtypes
-                    _LOGGER.debug(f"Unknown control status message type: {e}")
-                    _LOGGER.debug(
+                    _LOGGER.warning(f"Unknown control status message type: {e}")
+                    _LOGGER.warning(
                         f"Raw data: {message.data_buffer.to_bytes().hex(':')}"
                     )
 
@@ -225,20 +225,31 @@ class At2PlusClient:
                     # NYI
                     pass
                 else:
-                    _LOGGER.debug(
+                    _LOGGER.warning(
                         f"Unknown extended message subtype: 0x{subheader.sub_type:02x}"
                     )
-                    _LOGGER.debug(f"Data: {message.data_buffer.to_bytes().hex(':')}")
+                    _LOGGER.warning(f"Data: {message.data_buffer.to_bytes().hex(':')}")
+                    _LOGGER.warning(f"Header: {message.header.to_bytes().hex(':')}")
+
+            elif message.header.type == MessageType.POWER_STATUS:
+                # Data is a single byte: 0x01 for ON, 0x00 for OFF.
+                # ACK not required
+                is_on = message.data_buffer.read_bytes(1)[0] == 0x01
+                self.system_power = "ON" if is_on else "OFF"
+                _LOGGER.info(
+                    f"Received system power status update: System is now {self.system_power}"
+                )
+
             else:
                 # Handle completely unknown message types
-                _LOGGER.debug(f"Unknown message type: 0x{message.header.type:02x}")
-                _LOGGER.debug(f"Header: {message.header.to_bytes().hex(':')}")
-                _LOGGER.debug(f"Data: {message.data_buffer.to_bytes().hex(':')}")
+                _LOGGER.warning(f"Unknown message type: 0x{message.header.type:02x}")
+                _LOGGER.warning(f"Header: {message.header.to_bytes().hex(':')}")
+                _LOGGER.warning(f"Data: {message.data_buffer.to_bytes().hex(':')}")
 
         except Exception as e:
             _LOGGER.error(f"Error processing message: {e}", exc_info=True)
-            _LOGGER.debug(f"Message header: {message.header.to_bytes().hex(':')}")
-            _LOGGER.debug(f"Message data: {message.data_buffer.to_bytes().hex(':')}")
+            _LOGGER.error(f"Message header: {message.header.to_bytes().hex(':')}")
+            _LOGGER.error(f"Message data: {message.data_buffer.to_bytes().hex(':')}")
 
     async def _read_magic(self) -> bytes:
         """Search for the two header magic bytes"""
@@ -451,7 +462,7 @@ class At2PlusClient:
                 last_sent is not None
                 and (now - last_sent) < self._ack_min_interval    
             ):
-                _LOGGER.debug(
+                _LOGGER.warning(
                     f"Suppressing duplicate ACK for subtype 0x{msg_type:02x} (sent {now - last_sent:.03f}s ago)"
                 )
                 return

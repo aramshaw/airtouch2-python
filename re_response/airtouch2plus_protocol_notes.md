@@ -191,15 +191,20 @@ A simple 1-byte payload is required.
 ```
 **Note**: The acknowledgment for this message must be sent as a `CONTROL_STATUS` message (type `0xC0`).
 
+### Other Message Types
+
+#### 0x27 - System On/Off Status
+
+**Purpose**: Broadcasts the overall power state of the AirTouch system. This is sent when the system is turned on or off.
+
+**Observed Data**:
+- `0x01`: System is ON.
+- `0x00`: System is OFF.
+
+**Required Handling**: This is a status broadcast and does not require an acknowledgment.
+
 ### Unknown Message Types
 
-#### 0x27 - Unknown Message Type
-
-**Purpose**: Unknown function, appears to be short status messages.
-
-**Observed Data**: Simple payloads (typically single bytes like 0x00, 0x01)
-
-**Required Handling**: Log and ignore - no acknowledgment appears necessary.
 
 ## Protocol Requirements
 
