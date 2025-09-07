@@ -1,7 +1,7 @@
 import asyncio
 import errno
 import logging
-from socket import gaierror
+import socket
 from typing import Callable
 from airtouch2.common.interfaces import CoroCallback, Serializable, TaskCreator
 
@@ -10,6 +10,23 @@ _LOGGER = logging.getLogger(__name__)
 NetworkOrHostDownErrors = (errno.EHOSTUNREACH, errno.ECONNREFUSED,  errno.ETIMEDOUT,
                            errno.ENETDOWN, errno.ENETUNREACH, errno.ENETRESET, errno.ECONNABORTED)
 
+def _set_keepalive_options(
+    sock: socket.socket, idle_seconds: int, interval_seconds: int, count: int
+):
+    if hasattr(sock, "SO_KEEPALIVE"):
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+    if hasattr(sock, "TCP_KEEPIDLE"):
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, idle_seconds)
+    if hasattr(socket, "TCP_KEEPINTVL"):
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, interval_seconds)
+    if hasattr(socket, "TCP_KEEPCNT"):
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, count)
+    if hasattr(socket, "TCP_USER_TIMEOUT"):
+        sock.setsockopt(
+            socket.IPPROTO_TCP,
+            socket.TCP_USER_TIMEOUT,
+            1000 * (idle_seconds + (interval_seconds * count)),
+        )
 
 class NetClient:
     """A generic network client"""
@@ -37,13 +54,19 @@ class NetClient:
             self._reader, self._writer = await asyncio.open_connection(self._host_ip, self._host_port)
         except OSError as e:
             _LOGGER.warning(f"Could not connect to host {self._host_ip}")
-            if isinstance(e, gaierror):
+            if isinstance(e, socket.gaierror):
                 # provided ip or port is rubbish/invalid
                 pass
             elif e.errno not in NetworkOrHostDownErrors:
                 raise e
             return False
         else:
+            _set_keepalive_options(
+                self._writer.get_extra_info("socket"),
+                idle_seconds=5,
+                interval_seconds=1,
+                count=5,
+            )
             await self._on_connect()
             return True
 
@@ -94,7 +117,7 @@ class NetClient:
             _LOGGER.debug(f"IncompleteReadError - partial bytes: {e.partial.hex(':')}")
             data = None
         except (ConnectionResetError, TimeoutError) as e:
-            _LOGGER.debug(f"ConnectionResetError")
+            _LOGGER.debug("ConnectionResetError")
             data = None
 
         if data is None:
