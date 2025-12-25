@@ -95,9 +95,17 @@ class At2PlusClient:
                 group_status_message = GroupStatusMessage.from_bytes(
                     message.data_buffer.read_bytes(subheader.subdata_length.total()))
                 self._task_creator(self._handle_group_status_message(group_status_message))
+            elif subheader.sub_type == ControlStatusSubType.EXTENDED_STATUS:
+                # Extended system status - requires ACK
+                _LOGGER.debug("Received Extended Status (0x2B)")
+                await self._send_ack_response(subheader.sub_type.value)
+            elif subheader.sub_type == ControlStatusSubType.SYSTEM_IDENTITY:
+                # System identity broadcast - requires ACK
+                _LOGGER.debug("Received System Identity broadcast (0x45)")
+                await self._send_ack_response(subheader.sub_type.value)
             else:
                 _LOGGER.warning(
-                    f"Unknown status message type: subtype={subheader.sub_type}, data={message.data_buffer.to_bytes().hex(':')}")
+                    f"Unknown control status subtype: 0x{subheader.sub_type:02x}")
         elif message.header.type == MessageType.EXTENDED:
             subheader = ExtendedSubHeader.from_buffer(message.data_buffer)
             if subheader.sub_type == ExtendedMessageSubType.ABILITY:
