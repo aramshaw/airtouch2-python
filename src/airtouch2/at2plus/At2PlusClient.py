@@ -24,6 +24,7 @@ class At2PlusClient:
         # public
         self.aircons_by_id: dict[int, At2PlusAircon] = {}
         self.groups_by_id: dict[int, At2PlusGroup] = {}
+        self.system_power: str | None = None
 
         # private
         self._client = NetClient(host, 9200, self._on_connect, self.handle_one_message, task_creator)
@@ -106,6 +107,12 @@ class At2PlusClient:
             else:
                 _LOGGER.warning(
                     f"Unknown extended message type: subtype={subheader.sub_type}, data={message.data_buffer.to_bytes().hex(':')}")
+        elif message.header.type == MessageType.POWER_STATUS:
+            # System on/off status broadcast - no ACK required
+            if message.data_buffer._head > 0:
+                is_on = message.data_buffer.read_bytes(1)[0] == 0x01
+                self.system_power = "ON" if is_on else "OFF"
+                _LOGGER.info(f"System power status: {self.system_power}")
         else:
             _LOGGER.warning(
                 f"Unknown message type, header={message.header.to_bytes().hex(':')}, data={message.data_buffer.to_bytes().hex(':')}")
