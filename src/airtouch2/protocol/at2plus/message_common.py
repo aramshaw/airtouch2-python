@@ -105,11 +105,13 @@ def prime_message_buffer(header: Header) -> Buffer:
 
 
 def add_checksum_message_buffer(buffer: Buffer) -> None:
-    buffer.append_bytes(crc16(buffer._data[2:-2]))
+    # Checksum is calculated from the address field to the end of the data
+    buffer.append_bytes(crc16(buffer.get_data_from_offset(CommonMessageOffsets.ADDRESS)))
 
 
 def add_checksum_message_bytes(data: bytearray) -> None:
-    checksum = crc16(data[2:-2])
+    # Checksum is calculated from the address field to the end of the data
+    checksum = crc16(data[CommonMessageOffsets.ADDRESS:-2])
     data[-2] = checksum[0]
     data[-1] = checksum[1]
 
@@ -118,3 +120,10 @@ def add_checksum_message_bytes(data: bytearray) -> None:
 class Message:
     header: Header
     data_buffer: Buffer
+
+    def to_bytes(self) -> bytes:
+        """Serialize message to bytes including header, data, and checksum."""
+        buffer = prime_message_buffer(self.header)
+        buffer.append_bytes(self.data_buffer.to_bytes())
+        add_checksum_message_buffer(buffer)
+        return buffer.to_bytes()
