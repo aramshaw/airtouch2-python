@@ -48,6 +48,7 @@ class MessageType(IntEnum):
     UNSET = 0
     CONTROL_STATUS = 0xC0
     EXTENDED = 0x1F
+    POWER_STATUS = 0x27         # System on/off status broadcast
 
 
 class Header(Serializable):

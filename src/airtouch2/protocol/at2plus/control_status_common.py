@@ -31,10 +31,15 @@ class ControlStatusOffsets(IntEnum):
 
 class ControlStatusSubType(IntEnum):
     UNSET = 0
+    AC_STATUS_EXTENDED = 0x10   # Extended AC status format
     GROUP_CONTROL = 0x20
     GROUP_STATUS = 0x21
     AC_CONTROL = 0x22
     AC_STATUS = 0x23
+    EXTENDED_STATUS = 0x2B      # Extended system status (timers, counters)
+    FAVORITE_STATUS = 0x31      # Favorite scene names and active status
+    ZONE_STATUS = 0x40          # Zone control status
+    SYSTEM_IDENTITY = 0x45      # System identity broadcast
 
 
 @dataclass
