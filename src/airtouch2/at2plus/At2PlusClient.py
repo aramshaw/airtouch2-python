@@ -1,13 +1,17 @@
 import asyncio
 from datetime import datetime
+import hashlib
 import logging
+import time
 
 from airtouch2.at2plus.At2PlusAircon import At2PlusAircon
 from airtouch2.at2plus.At2PlusGroup import At2PlusGroup
 from airtouch2.common.NetClient import NetClient
 from airtouch2.protocol.at2plus.control_status_common import ControlStatusSubHeader, ControlStatusSubType
 from airtouch2.protocol.at2plus.extended_common import ExtendedMessageSubType, ExtendedSubHeader
-from airtouch2.protocol.at2plus.message_common import HEADER_LENGTH, HEADER_MAGIC, Header, Message, MessageType
+from airtouch2.protocol.at2plus.message_common import (
+    HEADER_LENGTH, HEADER_MAGIC, Header, Message, MessageType, AddressMsgType
+)
 from airtouch2.protocol.at2plus.messages.AcAbilityMessage import AcAbility, AcAbilityMessage, RequestAcAbilityMessage
 from airtouch2.protocol.at2plus.messages.AcStatus import AcStatusMessage
 from airtouch2.common.Buffer import Buffer
@@ -34,6 +38,10 @@ class At2PlusClient:
         self._ability_message_queue: asyncio.Queue[AcAbilityMessage] = asyncio.Queue()
         self._found_ac = asyncio.Event()
         self._new_group_callbacks: list[Callback] = []
+
+        # ACK rate-limiting to prevent flooding
+        self._last_ack_sent: dict[str, float] = {}
+        self._ack_min_interval: float = 0.3
 
         self.add_new_ac_callback(lambda: self._found_ac.set())
 
@@ -231,3 +239,49 @@ class At2PlusClient:
         if request_names:
             _LOGGER.debug("Requesting all group names")
             await self._client.send(RequestGroupNamesMessage())
+
+    async def _send_ack_response(self, subtype: int) -> None:
+        """Send acknowledgment response for extended status messages.
+
+        AirTouch2+ controllers require ACK responses for certain message types
+        (0x2B Extended Status, 0x45 System Identity) to maintain stable connections.
+        """
+        # Build ACK subheader with 1-byte payload
+        if subtype in (0x2B, 0x45):
+            ack_data = bytes([
+                subtype, 0x00,      # Subtype + reserved
+                0x00, 0x01,         # Normal data length (1 byte)
+                0x00, 0x00,         # Repeat data length
+                0x00, 0x00,         # Repeat count
+                0x00,               # 1-byte zero payload
+            ])
+        else:
+            # Generic ACK with no payload
+            ack_data = bytes([
+                subtype, 0x00,
+                0x00, 0x00,
+                0x00, 0x00,
+                0x00, 0x00,
+            ])
+
+        # Rate-limit identical ACKs
+        ack_hash = hashlib.sha256(ack_data).hexdigest()
+        now = time.monotonic()
+        if ack_hash in self._last_ack_sent:
+            if (now - self._last_ack_sent[ack_hash]) < self._ack_min_interval:
+                _LOGGER.debug(f"Suppressing duplicate ACK for 0x{subtype:02x}")
+                return
+        self._last_ack_sent[ack_hash] = now
+
+        # Create header - 0x2B and 0x45 require 0xC0 in address field
+        if subtype in (0x2B, 0x45):
+            header = Header(0xC0, MessageType.CONTROL_STATUS, len(ack_data))
+        else:
+            header = Header(AddressMsgType.NORMAL, MessageType.CONTROL_STATUS, len(ack_data))
+
+        buffer = Buffer(len(ack_data))
+        buffer.append_bytes(ack_data)
+        message = Message(header, buffer)
+
+        await self._client.send(message)
+        _LOGGER.debug(f"Sent ACK for 0x{subtype:02x}")
