@@ -19,6 +19,10 @@ from airtouch2.protocol.at2plus.crc16_modbus import crc16
 from airtouch2.common.interfaces import Callback, Serializable, TaskCreator
 from airtouch2.protocol.at2plus.messages.GroupNames import RequestGroupNamesMessage, group_names_from_subdata
 from airtouch2.protocol.at2plus.messages.GroupStatus import GroupStatusMessage
+from airtouch2.protocol.at2plus.messages.FavoriteStatus import (
+    Favorite,
+    FavoriteStatusMessage,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -29,6 +33,8 @@ class At2PlusClient:
         self.aircons_by_id: dict[int, At2PlusAircon] = {}
         self.groups_by_id: dict[int, At2PlusGroup] = {}
         self.system_power: str | None = None
+        self.favorites: list[Favorite] = []
+        self.active_favorite_id: int | None = None
 
         # private
         self._client = NetClient(host, 9200, self._on_connect, self.handle_one_message, task_creator)
@@ -38,6 +44,7 @@ class At2PlusClient:
         self._ability_message_queue: asyncio.Queue[AcAbilityMessage] = asyncio.Queue()
         self._found_ac = asyncio.Event()
         self._new_group_callbacks: list[Callback] = []
+        self._favorite_callbacks: list[Callback] = []
 
         # ACK rate-limiting to prevent flooding
         self._last_ack_sent: dict[str, float] = {}
@@ -75,6 +82,16 @@ class At2PlusClient:
 
         return remove_callback
 
+    def add_favorite_callback(self, callback: Callback):
+        """Register callback for favorite changes."""
+        self._favorite_callbacks.append(callback)
+
+        def remove_callback() -> None:
+            if callback in self._favorite_callbacks:
+                self._favorite_callbacks.remove(callback)
+
+        return remove_callback
+
     async def send(self, msg: Serializable):
         await self._client.send(msg)
 
@@ -103,6 +120,14 @@ class At2PlusClient:
                 # System identity broadcast - requires ACK
                 _LOGGER.debug("Received System Identity broadcast (0x45)")
                 await self._send_ack_response(subheader.sub_type.value)
+            elif subheader.sub_type == ControlStatusSubType.FAVORITE_STATUS:
+                # Favorite status broadcast - no ACK needed
+                subdata = message.data_buffer.read_bytes(subheader.subdata_length.total())
+                fav_status = FavoriteStatusMessage.from_data(subheader, subdata)
+                self.favorites = fav_status.favorites
+                self.active_favorite_id = fav_status.active_favorite_id
+                for callback in self._favorite_callbacks:
+                    callback()
             else:
                 _LOGGER.warning(
                     f"Unknown control status subtype: 0x{subheader.sub_type:02x}")
