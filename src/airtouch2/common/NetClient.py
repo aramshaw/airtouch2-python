@@ -1,7 +1,8 @@
 import asyncio
 import errno
 import logging
-from socket import gaierror
+import socket
+#from socket import gaierror
 from typing import Callable
 from airtouch2.common.interfaces import CoroCallback, Serializable, TaskCreator
 
@@ -33,8 +34,14 @@ class NetClient:
     async def connect(self) -> bool:
         """Opens connection to the server, returns True/False if successful/unsuccessful"""
         _LOGGER.debug(f"Connecting to {self._host_ip} on port {self._host_port}")
+
         try:
             self._reader, self._writer = await asyncio.open_connection(self._host_ip, self._host_port)
+            sock = self._writer.get_extra_info('socket')                                                        
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)  # Enable keep-alive    
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 60) # Idle time before sending probes (seconds)
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 10) # Interval between probes (seconds)       
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 5)   # Number of probes before considering connection dead
         except OSError as e:
             _LOGGER.warning(f"Could not connect to host {self._host_ip}")
             if isinstance(e, gaierror):
