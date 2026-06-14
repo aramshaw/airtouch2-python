@@ -48,6 +48,9 @@ class MessageType(IntEnum):
     UNSET = 0
     CONTROL_STATUS = 0xC0
     EXTENDED = 0x1F
+    # Undocumented broadcast the controller sends when the system is powered
+    # on/off (1 data byte: 0x01 = on, 0x00 = off). No acknowledgement required.
+    POWER_STATUS = 0x27
 
 
 class Header(Serializable):

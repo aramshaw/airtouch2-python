@@ -22,3 +22,14 @@ class TestSubHeader(unittest.TestCase):
         serialized = subheader.to_bytes()
         expected = bytes([ControlStatusSubType.GROUP_CONTROL, 0]) + sdl.to_bytes()
         self.assertEqual(serialized, expected)
+
+
+class TestUndocumentedSubTypes(unittest.TestCase):
+    def test_extended_status_and_identity_are_recognised(self):
+        self.assertEqual(ControlStatusSubType(0x2B), ControlStatusSubType.EXTENDED_STATUS)
+        self.assertEqual(ControlStatusSubType(0x45), ControlStatusSubType.IDENTITY)
+
+    def test_subheader_parses_real_extended_status(self):
+        # First 8 bytes of a real 0x2B message's data, captured from the controller.
+        subheader = ControlStatusSubHeader.from_bytes(bytes.fromhex("2b00000000040006"))
+        self.assertEqual(subheader.sub_type, ControlStatusSubType.EXTENDED_STATUS)

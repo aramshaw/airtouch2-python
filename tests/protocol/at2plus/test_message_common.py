@@ -55,3 +55,14 @@ class TestMessage(unittest.TestCase):
         self.assertEqual(out[2], 0xC0)
         self.assertEqual(out[3], AddressSource.SELF)
         self.assertEqual(out[-2:], crc16(out[2:-2]))
+
+
+class TestPowerStatusType(unittest.TestCase):
+    def test_power_status_type_recognised(self):
+        self.assertEqual(MessageType(0x27), MessageType.POWER_STATUS)
+
+    def test_header_parses_real_power_message(self):
+        # Real 0x27 power broadcast header captured from the controller.
+        header = Header.from_bytes(bytes.fromhex("5555b08001270001"))
+        self.assertEqual(header.type, MessageType.POWER_STATUS)
+        self.assertEqual(header.data_length, 1)

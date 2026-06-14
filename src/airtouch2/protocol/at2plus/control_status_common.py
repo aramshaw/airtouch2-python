@@ -35,6 +35,10 @@ class ControlStatusSubType(IntEnum):
     GROUP_STATUS = 0x21
     AC_CONTROL = 0x22
     AC_STATUS = 0x23
+    # Undocumented status broadcasts the AirTouch 2+ sends unsolicited. These
+    # must be acknowledged or the controller stops responding on the session.
+    EXTENDED_STATUS = 0x2B  # Periodic (~30s) system status (carries console temps)
+    IDENTITY = 0x45         # "Polyaire ... Atch2PM" identity broadcast
 
 
 @dataclass
