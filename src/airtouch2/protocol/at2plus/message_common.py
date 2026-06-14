@@ -117,3 +117,10 @@ def add_checksum_message_bytes(data: bytearray) -> None:
 class Message:
     header: Header
     data_buffer: Buffer
+
+    def to_bytes(self) -> bytes:
+        """Serialize the message to bytes: header, data, and trailing CRC16 checksum."""
+        buffer = prime_message_buffer(self.header)
+        buffer.append_bytes(self.data_buffer.to_bytes())
+        add_checksum_message_buffer(buffer)
+        return buffer.to_bytes()
