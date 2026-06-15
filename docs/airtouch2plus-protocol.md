@@ -63,7 +63,8 @@ ST 00 | NLEN(2) | RLEN(2) | RCNT(2) | <normal data NLEN bytes> | <RCNT × RLEN r
 | `C0`/`2B` | Extended status (console temps, favourite availability) | ← | **yes** | **[verified]** |
 | `C0`/`45` | Identity broadcast | ← | **yes** | **[verified]** |
 | `27` | System power on/off | ← | no | **[verified]** |
-| `C0`/`31` | Favourite status (names + active) | ← | no | **[unverified]** — never seen live |
+| `C0`/`30` | Favourite control (activate) | → | — | **[verified]** |
+| `C0`/`31` | Favourite status (names + active) | ← | no | **[verified]** — request-only |
 | `C0`/`40` | Zone status | ← | (doc says yes) | **[unverified]** — never seen live |
 | `C0`/`10` | AC status extended | ← | (doc says yes) | **[unverified]** — never seen live |
 
@@ -111,24 +112,32 @@ Top‑level message type (not a `0xC0` sub‑type). One data byte: `01` = on,
 
 Example header: `55 55 b0 80 01 27 00 01`, data `00`.
 
-### `C0`/`31` — Favourite status **[unverified]**
+### `C0`/`30` — Favourite control (activate) **[verified]**
 
-Per the earlier notes this carries the favourite **names** and the **active**
-favourite, and "is sent when the active favourite changes". **However, across
-~25 minutes and repeated panel favourite‑switches it was never observed** — the
-switches only surfaced as `0x21` zone changes. Hypothesis: `0x31` is
-**request‑only** (the official app likely subscribes to it). Resolving this is
-the main open task for favourite support.
+Activate favourite *N*: control/status, sub‑type `0x30`, normal data
+`[1<<N, 0x08]` (a bitmap of the target favourite plus the same `0x08` constant
+seen in the `0x31` selector). Example — activate gym (id 1):
+`55 55 80 b0 01 c0 00 0a 30 00 00 02 00 00 00 00 02 08 <crc>`. The controller
+actuates the favourite's zones (real dampers move) and broadcasts an updated
+`0x31`. Verified live: `main`↔`gym` round trip. (`At2PlusClient.activate_favourite(id)`.)
 
-Documented format (from the earlier notes, **unverified**):
+### `C0`/`31` — Favourite status (read) **[verified]**
+
+**Request‑only** — the controller does not broadcast this unsolicited (it never
+appeared across ~25 min of passive listening, even on panel changes; only `0x21`
+zone changes were seen). Request it the way group/AC status are requested —
+sub‑type `0x31`, empty repeat data, address `0x80`:
+`55 55 80 b0 01 c0 00 08 31 00 00 00 00 0b 00 00 <crc>`. The reply:
+
 ```
 31 00 | NLEN=0002 | RLEN=000B | RCNT=0004 | <active selector 2B> | 4 × 11-byte favourite blocks
 ```
-- Active selector byte 0 is a bitmap: `01`=fav0, `02`=fav1, `04`=fav2, `08`=fav3.
-- Favourite block: `ID(1) | name(8 ASCII, null-padded) | unknown(2)`.
+- Active selector byte 0 is a bitmap: `01`=fav0, `02`=fav1, `04`=fav2, `08`=fav3 (byte 1 observed `0x08`, meaning unknown).
+- Favourite block: `id(1) | name(8 ASCII, null‑padded) | unknown(2)`.
 
-The library's `FavouriteStatus.py` parser already matches this format; what's
-missing is a live `0x31` to feed it.
+Verified reply (test system): favourites `0=main, 1=gym, 2=night, 3=Fav4`,
+active = main. `FavouriteStatus.py` decodes it. A network‑initiated activation
+(via `0x30`) also triggers a `0x31` broadcast.
 
 ### `C0`/`21` — Group (zone) status **[verified]**
 
@@ -154,11 +163,9 @@ re‑writes these (which is how favourite changes are observed today).
 
 ## Open questions
 
-- How does a client get `0x31` (favourite names + active)? Likely a request /
-  subscription the official app sends. Needed for favourite read/select support.
-- Activating a favourite from the network (write) — control message unknown.
 - `0x10` / `0x40` semantics and whether they ever require ACKs on other systems.
 - Whether `0x80` is accepted in place of `0xC0` for `0x2B`/`0x45` ACKs.
+- The meaning of the `0x08` byte in the favourite active selector / activation command.
 
 ## Provenance
 
