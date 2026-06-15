@@ -16,6 +16,11 @@ from airtouch2.common.interfaces import Callback, Serializable, TaskCreator
 from airtouch2.protocol.at2plus.messages.GroupNames import RequestGroupNamesMessage, group_names_from_subdata
 from airtouch2.protocol.at2plus.messages.GroupStatus import GroupStatusMessage
 from airtouch2.protocol.at2plus.messages.ExtendedStatus import ExtendedStatusMessage
+from airtouch2.protocol.at2plus.messages.FavouriteStatus import (
+    Favourite,
+    FavouriteStatusMessage,
+    RequestFavouriteStatusMessage,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -32,6 +37,8 @@ class At2PlusClient:
         self.aircons_by_id: dict[int, At2PlusAircon] = {}
         self.groups_by_id: dict[int, At2PlusGroup] = {}
         self.console_temperatures: dict[int, float] = {}
+        self.favourites: list[Favourite] = []
+        self.active_favourite_id: int | None = None
 
         # private
         self._client = NetClient(host, 9200, self._on_connect, self.handle_one_message, task_creator)
@@ -42,6 +49,7 @@ class At2PlusClient:
         self._found_ac = asyncio.Event()
         self._new_group_callbacks: list[Callback] = []
         self._console_temperature_callbacks: list[Callback] = []
+        self._favourite_callbacks: list[Callback] = []
 
         self.add_new_ac_callback(lambda: self._found_ac.set())
 
@@ -84,6 +92,15 @@ class At2PlusClient:
 
         return remove_callback
 
+    def add_favourite_callback(self, callback: Callback):
+        self._favourite_callbacks.append(callback)
+
+        def remove_callback() -> None:
+            if callback in self._favourite_callbacks:
+                self._favourite_callbacks.remove(callback)
+
+        return remove_callback
+
     async def send(self, msg: Serializable):
         await self._client.send(msg)
 
@@ -112,6 +129,10 @@ class At2PlusClient:
             elif subheader.sub_type == ControlStatusSubType.IDENTITY:
                 # Unsolicited broadcast that must be acknowledged to keep the connection alive.
                 await self._acknowledge_status(subheader.sub_type)
+            elif subheader.sub_type == ControlStatusSubType.FAVOURITE_STATUS:
+                # Reply to our favourite request; carries the list + active favourite. No ACK.
+                subdata = message.data_buffer.read_bytes(subheader.subdata_length.total())
+                self._update_favourites(FavouriteStatusMessage.from_data(subheader, subdata))
             else:
                 _LOGGER.warning(
                     f"Unknown status message type: subtype={subheader.sub_type}, data={message.data_buffer.to_bytes().hex(':')}")
@@ -158,6 +179,12 @@ class At2PlusClient:
             self.console_temperatures = message.console_temperatures
             for callback in self._console_temperature_callbacks:
                 callback()
+
+    def _update_favourites(self, message: FavouriteStatusMessage) -> None:
+        self.favourites = message.favourites
+        self.active_favourite_id = message.active_favourite_id
+        for callback in self._favourite_callbacks:
+            callback()
 
     async def _read_magic(self) -> bytes:
         """Search for the two header magic bytes"""
@@ -223,6 +250,8 @@ class At2PlusClient:
         await self._client.send(GroupStatusMessage([]))
         # request ACs
         await self._client.send(AcStatusMessage([]))
+        # request favourites (the controller does not broadcast these unsolicited)
+        await self._client.send(RequestFavouriteStatusMessage())
 
     async def _handle_status_message(self, message: AcStatusMessage):
         _LOGGER.debug("Handling AC status message")
