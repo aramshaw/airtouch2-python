@@ -66,3 +66,29 @@ class TestStatusAck(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(sent), 1)
         self.assertEqual(sent[0].to_bytes()[8], 0x2B)
+
+
+class TestExtendedStatusHandling(unittest.IsolatedAsyncioTestCase):
+    async def test_updates_console_temperatures_and_still_acks(self):
+        client, sent = _make_client_with_capture()
+        data = bytes.fromhex(
+            "2b00000000040006808007ff818107ff828207ff838307ff90ff02c591ff07ff"
+        )
+        received = Message(
+            Header(AddressMsgType.NORMAL, MessageType.CONTROL_STATUS, len(data), _received=True),
+            Buffer.from_bytes(data),
+        )
+
+        async def fake_read():
+            return received
+
+        client._read_message = fake_read
+
+        notified = []
+        client.add_console_temperature_callback(lambda: notified.append(dict(client.console_temperatures)))
+
+        await client.handle_one_message()
+
+        self.assertEqual(client.console_temperatures, {0: 19.7})
+        self.assertEqual(notified, [{0: 19.7}])  # callback fired with the new reading
+        self.assertEqual(len(sent), 1)  # 0x2B still acknowledged
