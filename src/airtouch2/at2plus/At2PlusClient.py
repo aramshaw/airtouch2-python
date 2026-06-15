@@ -21,6 +21,7 @@ from airtouch2.protocol.at2plus.messages.FavouriteStatus import (
     FavouriteStatusMessage,
     RequestFavouriteStatusMessage,
 )
+from airtouch2.protocol.at2plus.messages.FavouriteControl import FavouriteControlMessage
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -103,6 +104,11 @@ class At2PlusClient:
 
     async def send(self, msg: Serializable):
         await self._client.send(msg)
+
+    async def activate_favourite(self, favourite_id: int) -> None:
+        """Activate a favourite (scene) by id. The controller actuates the
+        favourite's zones and broadcasts an updated favourite status."""
+        await self._client.send(FavouriteControlMessage(favourite_id))
 
     async def handle_one_message(self) -> None:
         message = await self._read_message()

@@ -35,8 +35,9 @@ class ControlStatusSubType(IntEnum):
     GROUP_STATUS = 0x21
     AC_CONTROL = 0x22
     AC_STATUS = 0x23
-    # Favourite (scene) names + active selector. Request-only: the controller
-    # does not broadcast this; the client must ask for it.
+    # Favourite (scene) control + status. Activate with FAVOURITE_CONTROL; the
+    # status is request-only (the controller does not broadcast it unsolicited).
+    FAVOURITE_CONTROL = 0x30
     FAVOURITE_STATUS = 0x31
     # Undocumented status broadcasts the AirTouch 2+ sends unsolicited. These
     # must be acknowledged or the controller stops responding on the session.

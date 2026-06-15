@@ -14,6 +14,7 @@ from airtouch2.protocol.at2plus.messages.FavouriteStatus import (
     FavouriteStatusMessage,
     RequestFavouriteStatusMessage,
 )
+from airtouch2.protocol.at2plus.messages.FavouriteControl import FavouriteControlMessage
 
 # A real 0x31 favourite-status reply captured from the controller (data after the
 # 8-byte message header). Favourites: 0=main (active), 1=gym, 2=night, 3=Fav4.
@@ -58,6 +59,28 @@ class TestFavouriteRequest(unittest.TestCase):
         # 55 55 80 b0 01 c0 00 08  31 00 00 00 00 0b 00 00  (the validated request)
         self.assertEqual(out[:16].hex(), "555580b001c0000831000000000b0000")
         self.assertEqual(out[-2:], crc16(out[2:-2]))
+
+
+class TestFavouriteControl(unittest.TestCase):
+    def test_activate_frame_matches_verified_command(self):
+        # Activating gym (id 1) - the exact command verified live on the controller.
+        out = FavouriteControlMessage(1).to_bytes()
+        self.assertEqual(out[:18].hex(), "555580b001c0000a30000002000000000208")
+        self.assertEqual(out[-2:], crc16(out[2:-2]))
+
+    def test_bitmap_encodes_favourite_id(self):
+        self.assertEqual(FavouriteControlMessage(0).to_bytes()[16], 0x01)
+        self.assertEqual(FavouriteControlMessage(3).to_bytes()[16], 0x08)
+
+
+class TestClientActivateFavourite(unittest.IsolatedAsyncioTestCase):
+    async def test_activate_sends_favourite_control(self):
+        client, sent = _client_with_capture()
+        await client.activate_favourite(1)
+        self.assertEqual(len(sent), 1)
+        out = sent[0].to_bytes()
+        self.assertEqual(out[8], 0x30)   # favourite control sub-type
+        self.assertEqual(out[16], 0x02)  # bitmap for favourite 1
 
 
 class TestClientFavourites(unittest.IsolatedAsyncioTestCase):
