@@ -5,7 +5,7 @@ import logging
 from airtouch2.at2plus.At2PlusAircon import At2PlusAircon
 from airtouch2.at2plus.At2PlusGroup import At2PlusGroup
 from airtouch2.common.NetClient import NetClient
-from airtouch2.protocol.at2plus.control_status_common import ControlStatusSubHeader, ControlStatusSubType
+from airtouch2.protocol.at2plus.control_status_common import ControlStatusSubHeader, ControlStatusSubType, SubDataLength
 from airtouch2.protocol.at2plus.extended_common import ExtendedMessageSubType, ExtendedSubHeader
 from airtouch2.protocol.at2plus.message_common import HEADER_LENGTH, HEADER_MAGIC, Header, Message, MessageType
 from airtouch2.protocol.at2plus.messages.AcAbilityMessage import AcAbility, AcAbilityMessage, RequestAcAbilityMessage
@@ -17,6 +17,12 @@ from airtouch2.protocol.at2plus.messages.GroupNames import RequestGroupNamesMess
 from airtouch2.protocol.at2plus.messages.GroupStatus import GroupStatusMessage
 
 _LOGGER = logging.getLogger(__name__)
+
+# ACKs for the undocumented status broadcasts are sent with the control/status
+# identifier (0xC0) in the address field. This is the value used by the proven,
+# long-running implementation; whether the usual client address (0x80) would
+# also be accepted for these messages has not been verified.
+CONTROL_STATUS_REPLY_ADDRESS = 0xC0
 
 
 class At2PlusClient:
@@ -86,6 +92,9 @@ class At2PlusClient:
                 group_status_message = GroupStatusMessage.from_bytes(
                     message.data_buffer.read_bytes(subheader.subdata_length.total()))
                 self._task_creator(self._handle_group_status_message(group_status_message))
+            elif subheader.sub_type in (ControlStatusSubType.EXTENDED_STATUS, ControlStatusSubType.IDENTITY):
+                # Unsolicited broadcasts that must be acknowledged to keep the connection alive.
+                await self._acknowledge_status(subheader.sub_type)
             else:
                 _LOGGER.warning(
                     f"Unknown status message type: subtype={subheader.sub_type}, data={message.data_buffer.to_bytes().hex(':')}")
@@ -106,9 +115,26 @@ class At2PlusClient:
             else:
                 _LOGGER.warning(
                     f"Unknown extended message type: subtype={subheader.sub_type}, data={message.data_buffer.to_bytes().hex(':')}")
+        elif message.header.type == MessageType.POWER_STATUS:
+            # System power on/off broadcast (0x01 = on, 0x00 = off). No ACK required.
+            _LOGGER.debug(f"Power status broadcast: {message.data_buffer.to_bytes().hex(':')}")
         else:
             _LOGGER.warning(
                 f"Unknown message type, header={message.header.to_bytes().hex(':')}, data={message.data_buffer.to_bytes().hex(':')}")
+
+    async def _acknowledge_status(self, sub_type: ControlStatusSubType) -> None:
+        """Acknowledge an unsolicited status broadcast (EXTENDED_STATUS / IDENTITY).
+
+        If these broadcasts aren't acknowledged the controller silently stops
+        responding on the TCP session, which presents as a dropped connection.
+        The ACK is a minimal control/status message that echoes the subtype.
+        """
+        subheader = ControlStatusSubHeader(
+            sub_type, SubDataLength(normal=1, repeat_count=0, repeat_length=0)
+        )
+        ack = subheader.to_bytes() + bytes(1)
+        header = Header(CONTROL_STATUS_REPLY_ADDRESS, MessageType.CONTROL_STATUS, len(ack))
+        await self._client.send(Message(header, Buffer.from_bytes(ack)))
 
     async def _read_magic(self) -> bytes:
         """Search for the two header magic bytes"""
