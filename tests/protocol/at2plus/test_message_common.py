@@ -57,6 +57,16 @@ class TestMessage(unittest.TestCase):
         self.assertEqual(out[-2:], crc16(out[2:-2]))
 
 
+class TestHeaderUnknownAddressSource(unittest.TestCase):
+    def test_tolerates_unknown_address_source(self):
+        # The controller sends 0xFD as the address-source byte on the favourite
+        # activation ack path. The source field is informational (not used to
+        # build the Header), so parsing must not raise on an unknown value.
+        header = Header.from_bytes(bytes.fromhex("5555fd800bc00036"))
+        self.assertEqual(header.type, MessageType.CONTROL_STATUS)
+        self.assertEqual(header.data_length, 0x36)
+
+
 class TestPowerStatusType(unittest.TestCase):
     def test_power_status_type_recognised(self):
         self.assertEqual(MessageType(0x27), MessageType.POWER_STATUS)
