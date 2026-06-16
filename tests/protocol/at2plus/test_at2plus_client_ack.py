@@ -92,3 +92,17 @@ class TestExtendedStatusHandling(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(client.console_temperatures, {0: 19.7})
         self.assertEqual(notified, [{0: 19.7}])  # callback fired with the new reading
         self.assertEqual(len(sent), 1)  # 0x2B still acknowledged
+
+
+class TestConnectionState(unittest.IsolatedAsyncioTestCase):
+    async def test_connected_flag_and_callback_transitions(self):
+        client, _ = _make_client_with_capture()
+        events = []
+        client.add_connection_callback(lambda: events.append(client.connected))
+
+        self.assertFalse(client.connected)
+        await client._on_connect()   # (re)connect: marks connected + sends handshake
+        self.assertTrue(client.connected)
+        client._on_disconnect()      # NetClient signalling a lost connection
+        self.assertFalse(client.connected)
+        self.assertEqual(events, [True, False])
