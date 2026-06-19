@@ -4,6 +4,7 @@ from airtouch2.at2plus.At2PlusClient import At2PlusClient
 from airtouch2.common.Buffer import Buffer
 from airtouch2.protocol.at2plus.control_status_common import ControlStatusSubType
 from airtouch2.protocol.at2plus.crc16_modbus import crc16
+from airtouch2.protocol.at2plus.messages.AcStatus import AcStatusMessage
 from airtouch2.protocol.at2plus.message_common import (
     AddressMsgType,
     AddressSource,
@@ -106,3 +107,22 @@ class TestConnectionState(unittest.IsolatedAsyncioTestCase):
         client._on_disconnect()      # NetClient signalling a lost connection
         self.assertFalse(client.connected)
         self.assertEqual(events, [True, False])
+
+
+class TestKeepAlivePoll(unittest.IsolatedAsyncioTestCase):
+    """The controller resets the socket after ~16 min of silence; a periodic
+    lightweight status request keeps the session alive (see
+    docs/controller-investigation.md)."""
+
+    async def test_poll_sends_status_request_when_connected(self):
+        client, sent = _make_client_with_capture()
+        client.connected = True
+        await client._send_keepalive_poll()
+        self.assertEqual(len(sent), 1)
+        self.assertIsInstance(sent[0], AcStatusMessage)
+
+    async def test_poll_sends_nothing_when_disconnected(self):
+        client, sent = _make_client_with_capture()
+        client.connected = False
+        await client._send_keepalive_poll()
+        self.assertEqual(len(sent), 0)
