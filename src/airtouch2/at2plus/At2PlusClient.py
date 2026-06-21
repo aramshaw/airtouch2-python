@@ -19,6 +19,11 @@ from airtouch2.protocol.at2plus.messages.GroupStatus import GroupStatusMessage
 
 _LOGGER = logging.getLogger(__name__)
 
+# The controller drops the TCP session after ~16 min of silence (it stops
+# broadcasting when nothing changes, e.g. overnight). A lightweight status
+# request every 4 min keeps the session alive and prevents that idle reset.
+POLL_INTERVAL_SECONDS = 240
+
 
 class At2PlusClient:
     def __init__(self, host: str, dump_responses: bool = False, task_creator: TaskCreator = asyncio.create_task):
@@ -30,6 +35,7 @@ class At2PlusClient:
         self._client = NetClient(host, 9200, self._on_connect, self.handle_one_message, task_creator)
         self._dump_responses = dump_responses
         self._task_creator = task_creator
+        self._poll_task: asyncio.Task[None] | None = None
         self._new_ac_callbacks: list[Callback] = []
         self._ability_message_queue: asyncio.Queue[AcAbilityMessage] = asyncio.Queue()
         self._found_ac = asyncio.Event()
@@ -42,11 +48,15 @@ class At2PlusClient:
 
     def run(self) -> None:
         self._client.run()
+        self._poll_task = self._task_creator(self._poll_loop())
 
     async def wait_for_ac(self, timeout: int = 5) -> None:
         await asyncio.wait_for(self._found_ac.wait(), timeout)
 
     async def stop(self) -> None:
+        if self._poll_task is not None:
+            self._poll_task.cancel()
+            self._poll_task = None
         await self._client.stop()
 
     def add_new_ac_callback(self, callback: Callback):
@@ -69,6 +79,25 @@ class At2PlusClient:
 
     async def send(self, msg: Serializable):
         await self._client.send(msg)
+
+    async def _send_keepalive_poll(self) -> None:
+        """Send a lightweight status request to keep the TCP session active.
+
+        The controller resets the socket after ~16 min of silence (it stops
+        broadcasting when nothing changes, e.g. overnight), so a periodic
+        request keeps traffic flowing. Best-effort: transient send errors
+        during reconnection are ignored.
+        """
+        try:
+            await self._client.send(AcStatusMessage([]))
+            _LOGGER.debug("Sent keep-alive status poll")
+        except Exception as e:
+            _LOGGER.debug(f"Keep-alive poll failed (likely reconnecting): {e}")
+
+    async def _poll_loop(self) -> None:
+        while True:
+            await asyncio.sleep(POLL_INTERVAL_SECONDS)
+            await self._send_keepalive_poll()
 
     async def handle_one_message(self) -> None:
         message = await self._read_message()
