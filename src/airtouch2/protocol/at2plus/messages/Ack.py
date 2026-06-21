@@ -8,12 +8,19 @@ from airtouch2.protocol.at2plus.control_status_common import (
     SubDataLength,
 )
 from airtouch2.protocol.at2plus.message_common import (
-    AddressMsgType,
     Header,
     MessageType,
     add_checksum_message_buffer,
     prime_message_buffer,
 )
+
+# The controller requires the ACK's top-level address byte to carry the
+# control/status identifier (0xC0), NOT the usual client value (0x80). Verified
+# on a live AirTouch 2+: acking the status broadcasts with 0x80 triggers a
+# continuous broadcast spam storm (~1.7/sec, ~100x normal) until the session is
+# unusable; 0xC0 is accepted cleanly. It looks redundant with the message-type
+# byte, but the controller genuinely validates it.
+CONTROL_STATUS_REPLY_ADDRESS = 0xC0
 
 
 class Ack(Serializable):
@@ -26,7 +33,7 @@ class Ack(Serializable):
         subheader = ControlStatusSubHeader(self.message_type, SubDataLength(1, 0, 0))
         buffer = prime_message_buffer(
             Header(
-                AddressMsgType.NORMAL,
+                CONTROL_STATUS_REPLY_ADDRESS,
                 MessageType.CONTROL_STATUS,
                 CONTROL_STATUS_SUBHEADER_LENGTH + subheader.subdata_length.total(),
             )

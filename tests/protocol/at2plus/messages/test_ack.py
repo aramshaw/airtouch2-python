@@ -8,7 +8,9 @@ class TestAck(unittest.TestCase):
         ack = Ack(message_type)
         serialised = ack.to_bytes()
         expected = bytes([
-            0x55, 0x55, 0x80, 0xb0, 0x01, 0xc0, 0x00, 0x09,
+            # Address byte must be 0xC0 (control/status), not 0x80 — verified on a
+            # live controller: 0x80 triggers a continuous broadcast spam storm.
+            0x55, 0x55, 0xc0, 0xb0, 0x01, 0xc0, 0x00, 0x09,
             # ControlStatusSubheader with matching sub message type
             # Static, 1-byte, zero payload.
             int(message_type), 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00
