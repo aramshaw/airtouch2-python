@@ -27,7 +27,7 @@ integration installs everything — there's no separate library install.
   1. nathanvdh's own ACK commit (kept, credited to him)
   2. `fix:` ACK address `0x80` → `0xC0` (with the spam-storm evidence)
   3. `feat:` keep-alive poll (the idle-timeout fix)
-- **Local only** (not pushed yet). Becomes a PR to `nathanvdh/airtouch2-python` when ready.
+- Pushed to your fork; **PR #18 open** → https://github.com/nathanvdh/airtouch2-python/pull/18
 
 ## Mental model
 
@@ -40,7 +40,7 @@ integration installs everything — there's no separate library install.
 - [x] Diagnose the dropout (root cause: ~16-min controller idle timeout)
 - [x] Fix it (keep-alive poll) and verify (3+ days, zero dropouts)
 - [x] Curate the clean dropout-fix branch for upstream
-- [ ] Write the PR description, then push + open the PR to nathanvdh's library
+- [x] Open the dropout-fix PR → https://github.com/nathanvdh/airtouch2-python/pull/18 (2026-06-22)
 - [ ] Follow-up PRs: favourites (read/write), console temperature
 - [ ] Integration-side PR(s) to nathanvdh's HA repo once the library lands
 
