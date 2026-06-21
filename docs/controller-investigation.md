@@ -21,8 +21,11 @@ the controller self-recovers) — which is why B went unnoticed for so long.
 1. Disabling TCP keepalive (build v0.3.3) changed nothing — eliminated.
 2. Every controller message was ACKed 100% (byte-identical, correct CRC); zero
    unknown-type warnings; no "hammering" — ACK coverage eliminated.
-3. Signature: the `0x2B` heartbeat *stretches* (30 s → minutes) then goes silent —
-   the controller slowing/freezing, not reacting to client traffic.
+3. Signature: the `0x2B` status messages are erratic even when healthy
+   (30 s–~15 min gaps) — there is no smooth "stretch". The consistent tell is a
+   **tight ~16-minute terminal silence before every reset** (day-5 resets at
+   962/969/978 s of silence, vs the controller *surviving* silences up to ~903 s):
+   a repeatable idle→reset boundary that looks like a ~16-min timeout/watchdog.
 4. During a hang, a neutral machine can't even ICMP-ping the controller — a TCP
    client cannot cause that.
 5. The official phone app is locked out too (runs none of our code).
@@ -41,6 +44,17 @@ the controller self-recovers) — which is why B went unnoticed for so long.
 - Frequency ~1–3 h (variable); affects all network clients; wall panel unaffected.
 - Recovery: self-recovers (~45 min–3 h) or persists until a controller restart.
 - Firmware at time of investigation: **Console 1.2.4, Main Module 2.2.0.2**.
+
+## Open lead (under test — day 5)
+The tight ~16-min idle→reset boundary is the first sign of a *timer* rather than a
+purely random freeze, and the client sends **no traffic** during those idle windows.
+An **application-level poll** (a real status request every ~4 min — distinct from
+the TCP keepalive already A/B-tested and ruled out) might keep the socket alive past
+the timeout and *prevent* some drops. Decisive either way: if polling suppresses the
+resets it's a fixable idle timeout; if not, it's confirmed an intrinsic freeze and
+the root-cause hunt is closed. Caveat / why it may be a long shot: each reset is
+followed by a multi-hour refuse-all freeze (not a benign idle disconnect), and the
+older builds' TCP keepalive (probes every 5 s) didn't prevent the resets.
 
 ## Mitigations (controller is hard-wired — no power-cycle option)
 - **Resilient morning automation**: retry AC-on every few minutes over a window
