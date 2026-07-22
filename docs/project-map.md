@@ -15,7 +15,7 @@ integration installs everything — there's no separate library install.
 
 ## 🟢 Running on Home Assistant right now
 
-- **`v0.4.2`**, installed via **HACS** from **`aramshaw/homeassistant-airtouch2plus`**.
+- **`v0.4.4`** (latest), installed via **HACS** from **`aramshaw/homeassistant-airtouch2plus`** — shows in HACS as **"Airtouch 2+ (aramshaw fork)"**.
 - Built from branch `feat/favourites-and-console-temp`, with the library bundled in.
 - Contains **everything**: dropout fix (ACKs) + keep-alive poll + favourites + console (touchscreen) temperature.
 - Status: daily driver — confirmed 3+ days with zero dropouts (from 2026-06-20).
