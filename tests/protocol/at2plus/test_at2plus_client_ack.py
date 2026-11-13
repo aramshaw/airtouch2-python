@@ -90,8 +90,8 @@ class TestExtendedStatusHandling(unittest.IsolatedAsyncioTestCase):
 
         await client.handle_one_message()
 
-        self.assertEqual(client.console_temperatures, {0: 19.7})
-        self.assertEqual(notified, [{0: 19.7}])  # callback fired with the new reading
+        self.assertEqual(client.console_temperatures, {0: 20.9})
+        self.assertEqual(notified, [{0: 20.9}])  # callback fired with the new reading
         self.assertEqual(len(sent), 1)  # 0x2B still acknowledged
 
 

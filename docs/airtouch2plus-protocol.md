@@ -89,10 +89,12 @@ Example (real capture):
   favourites). These bytes do **not** change when you switch between favourites —
   only when favourites are added/removed. **[verified]**
 - **`0x90`/`0x91` = console (touchscreen) temperatures.** `FLAG_HI:FLAG_LO` is a
-  16‑bit value; `temperature °C = (value − 512) / 10`. `0x07FF` = no sensor
-  present. Above, console 0 = `0x02C5` → 19.7 °C, console 1 absent. Confirmed by
-  watching the value track room temperature (`02:c4→02:c9` over a session) and a
-  community finding. **[verified]**  *(The old notes wrongly called these "system
+  16‑bit value; `temperature °C = (value − 500) / 10`, the same encoding as AC
+  status. `0x07FF` = no sensor present. Above, console 0 = `0x02C5` → 20.9 °C,
+  console 1 absent. Confirmed by watching the value track room temperature
+  (`02:c4→02:c9` over a session) and a community finding. **[verified]**
+  The offset was 512 until 2026-11-14, which read 1.2 °C low. Checked against a
+  T&H sensor beside the console: 500 read within ~0.3 °C, 512 about 1.5 °C low.  *(The old notes wrongly called these "system
   counters".)*
 
 **ACK:** `2B 00 00 01 00 00 00 00 00` as a `0xC0` message (see below).
