@@ -84,10 +84,14 @@ Example (real capture):
 └ sub-header: NLEN0 RLEN4 RCNT6        └── favourite availability ──┘          └ console0 ┘  └ console1 ┘
 ```
 
-- **`0x80`–`0x83` = favourite availability.** When `ID == VAL` the favourite slot
-  is configured. Above, all four are available (the test system has 4
-  favourites). These bytes do **not** change when you switch between favourites —
-  only when favourites are added/removed. **[verified]**
+- **`0x80`–`0x83` = unknown; probably zone-sensor slots.** Always
+  `ID ID 07 FF` on the test system. Earlier notes called these favourite
+  availability and marked it verified; that was wrong. The console has four
+  fixed favourite slots that can't be deleted, and renaming or naming a slot
+  (2026-11-14) left all four records unchanged across 254 frames. Each record
+  carries a temperature field (`07FF` = no reading), the same layout as the
+  console records, which fits a sensor slot better than a favourite. The test
+  system has no zone sensors, so this can't be confirmed here. **[unverified]**
 - **`0x90`/`0x91` = console (touchscreen) temperatures.** `FLAG_HI:FLAG_LO` is a
   16‑bit value; `temperature °C = (value − 500) / 10`, the same encoding as AC
   status. `0x07FF` = no sensor present. Above, console 0 = `0x02C5` → 20.9 °C,
